@@ -1,0 +1,7 @@
+numpy
+torch
+matplotlib
+gym
+git+https://github.com/grantsrb/Gym-Snake.git
+tensorboardX
+kaggle-environments
