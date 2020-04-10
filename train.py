@@ -18,29 +18,39 @@ from tensorboardX import SummaryWriter
 from utils import mkdir
 from model import ActorCritic
 from multiprocessing_env import SubprocVecEnv
+from multienv import MultiEnv
 
 ENV_ID              = "trader-v0"
 NUM_ENVS            = 1
 HIDDEN_SIZE         = 256
 LEARNING_RATE       = 1e-5
-GAMMA               = 0.96
+GAMMA               = 0.99
 GAE_LAMBDA          = 0.95
 PPO_EPSILON         = 0.2
 CRITIC_DISCOUNT     = 0.5
 ENTROPY_BETA        = 0.001
-PPO_STEPS           = 256
-MINI_BATCH_SIZE     = 64
-PPO_EPOCHS          = 20
+PPO_STEPS           = 4096
+MINI_BATCH_SIZE     = 512
+PPO_EPOCHS          = 60
 TEST_EPOCHS         = 200
 NUM_TESTS           = 10
 TARGET_REWARD       = 1
 WINDOW_SIZE = 60
 
 
+bcolors= ['\033[95m',
+            '\033[94m',
+            '\033[92m',
+            '\033[93m',
+            '\033[91m',
+            '\033[0m',
+            '\033[1m',
+            '\033[4m']
+
 def make_env():
     # returns a function which creates a single environment
     def _thunk():
-        env = OhlcvEnv(WINDOW_SIZE, './data/train/')
+        env = OhlcvEnv(WINDOW_SIZE, './data/train/', print_color=random.choice(bcolors))
         return env
     return _thunk
 
@@ -102,6 +112,7 @@ def ppo_update(frame_idx, states, actions, log_probs, returns, advantages, clip_
     sum_loss_total = 0.0
 
     # PPO EPOCHS is the number of times we will go through ALL the training data to make updates
+    print('running ppo update ...')
     for _ in range(PPO_EPOCHS):
         # grabs random mini-batches several times until we have covered all data
         for state, action, old_log_probs, return_, advantage in ppo_iter(states, actions, log_probs, returns, advantages):
@@ -144,7 +155,8 @@ if __name__ == "__main__":
     mkdir('.', 'checkpoints')
     parser = argparse.ArgumentParser()
     parser.add_argument("-e", "--envs", type=int, default=NUM_ENVS, help="Number of envs")
-    parser.add_argument("--use_rand", type=bool, default=False, help="Use random agent during training")
+    parser.add_argument("--mp", type=bool, default=False, help="Use multi process")
+    
     args = parser.parse_args()
     writer = SummaryWriter(comment="ppo_connectx")
     
@@ -155,7 +167,9 @@ if __name__ == "__main__":
     
     # Prepare environments
     envs = [make_env() for i in range(args.envs)]
-    envs = SubprocVecEnv(envs)
+    envs = MultiEnv(envs)
+    if args.mp:
+        envs = SubprocVecEnv(envs)
     env = OhlcvEnv(WINDOW_SIZE, './data/test/')
     obs_ = env.reset()
     num_inputs  = env.observation_space.shape
@@ -194,7 +208,6 @@ if __name__ == "__main__":
             
             log_probs.append(log_prob)
             values.append(value)
-            reward = [0 if r is None else r for r in reward]
             rewards.append(torch.FloatTensor(reward).unsqueeze(1).to(device))
             masks.append(torch.FloatTensor(1 - done).unsqueeze(1).to(device))
             

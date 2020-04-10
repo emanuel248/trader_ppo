@@ -20,7 +20,7 @@ HOLD = 2
 
 class OhlcvEnv(gym.Env):
 
-    def __init__(self, window_size, path, show_trade=True):
+    def __init__(self, window_size, path, show_trade=True, print_color='\033[92m'):
         self.show_trade = show_trade
         self.path = path
         self.actions = ["LONG", "SHORT", "FLAT"]
@@ -29,6 +29,7 @@ class OhlcvEnv(gym.Env):
         self.file_list = []
         # load_csv
         self.load_from_csv()
+        self.print_color = print_color
 
         # n_features
         self.window_size = window_size
@@ -43,7 +44,7 @@ class OhlcvEnv(gym.Env):
         if(len(self.file_list) == 0):
             self.file_list = [x.name for x in Path(self.path).iterdir() if x.is_file()]
             self.file_list.sort()
-        self.rand_episode = self.file_list.pop()
+        self.rand_episode = random.choice(self.file_list)
         raw_df= pd.read_csv(self.path + self.rand_episode)
         extractor = process_data.FeatureExtractor(raw_df)
         self.df = extractor.add_bar_features() # bar features o, h, l, c ---> C(4,2) = 4*3/2*1 = 6 features
@@ -125,8 +126,8 @@ class OhlcvEnv(gym.Env):
         actions_str = 'BUY' if self.action == BUY else 'SELL' if self.action == SELL else 'HOLD'
         position_str = 'LONG' if self.position == LONG else 'SHORT' if self.position == SHORT else 'FLAT'
         if(self.show_trade and self.current_tick%100 == 0):
-            print("Tick: {0}/ Portfolio (krw-won): {1}".format(self.current_tick, self.portfolio))
-            print("Long: {0}/ Short: {1}/Action: {2}/Position: {3}".format(self.n_long, self.n_short, actions_str, position_str))
+            print(f"{self.print_color}Tick: {self.current_tick}/ Portfolio (krw-won): {self.portfolio}")
+            print(f"{self.print_color}Long: {self.n_long}/ Short: {self.n_short}/Action: {actions_str}/Position: {position_str}")
         self.history.append((self.action, self.current_tick, self.closingPrice, self.portfolio, self.reward))
         self.updateState()
         if (self.current_tick > (self.df.shape[0]) - self.window_size-1):
@@ -134,7 +135,10 @@ class OhlcvEnv(gym.Env):
             self.reward = self.get_profit() # return reward at end of the game
 
         
-        return self.state, 1 if self.reward > 0.0 else 0 if self.reward == 0 else -1.0, self.done, {'portfolio':np.array([self.portfolio]),
+        if self.done:
+            self.reset()
+        self.reward = 1.0 if action == HOLD and temp_reward <= 0.0 else self.reward
+        return self.state, self.reward, self.done, {'portfolio':np.array([self.portfolio]),
                                                     "history":self.history,
                                                     "n_trades":{'long':self.n_long, 'short':self.n_short}}
 
